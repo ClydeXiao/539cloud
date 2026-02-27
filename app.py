@@ -7,7 +7,6 @@ app = Flask(__name__)
 
 HISTORY_FILE = "539_history.csv"
 
-# 啟動時讀取一次
 history = []
 
 def load_history():
@@ -22,34 +21,33 @@ load_history()
 def analyze():
 
     counter = Counter()
+    last_seen = {n: None for n in range(1, 40)}
 
-    # 🅱 最近50期衰減模型
-    recent = history[-50:]
-    for idx, draw in enumerate(recent):
-        weight = (idx + 1) / 50  # 越近權重越高
+    total_draws = len(history)
+
+    # 單次掃描（高效能）
+    for idx, draw in enumerate(history):
         for num in draw:
-            counter[num] += weight * 2
+            counter[num] += 1
+            last_seen[num] = idx
 
-    # 🅰 遺漏值模型
-    last_seen = {n: 0 for n in range(1, 40)}
+    # 最近50期加權
+    for draw in history[-50:]:
+        for num in draw:
+            counter[num] += 2
 
-    for i, draw in enumerate(reversed(history)):
-        for n in range(1, 40):
-            if n in draw:
-                if last_seen[n] == 0:
-                    last_seen[n] = i
-
+    # 遺漏值加權
     for n in range(1, 40):
-        miss = last_seen[n]
-        counter[n] += miss * 0.3  # 遺漏加權
+        if last_seen[n] is not None:
+            miss = total_draws - last_seen[n]
+            counter[n] += miss * 0.2
 
-    # 熱門 / 冷門
     hot = [n for n, _ in counter.most_common(5)]
     cold = [n for n, _ in counter.most_common()[:-6:-1]]
 
-    # AI選號
     numbers = list(range(1, 40))
     weights = [counter.get(n, 1) for n in numbers]
+
     selected = random.choices(numbers, weights=weights, k=5)
 
     return sorted(list(set(selected)))[:5], hot, cold
@@ -65,7 +63,7 @@ def generate():
 
 @app.route("/")
 def home():
-    return "539 Cloud AI Pro Running"
+    return "539 Cloud AI Optimized Running"
 
 if __name__ == "__main__":
     app.run()
