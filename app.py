@@ -28,16 +28,24 @@ def build_weights():
             counter[num] += 1
             last_seen[num] = idx
 
+    # 最近20期趨勢評估（動態調整）
+    trend_score = Counter()
+    for draw in history[-20:]:
+        for num in draw:
+            trend_score[num] += 1
+
+    trend_factor = 1 + (sum(trend_score.values()) / 100)
+
     # 最近50期加權
     for draw in history[-50:]:
         for num in draw:
-            counter[num] += 2
+            counter[num] += 2 * trend_factor
 
-    # 遺漏值
+    # 遺漏值（動態強度）
     for n in range(1, 40):
         if last_seen[n] is not None:
             miss = total_draws - last_seen[n]
-            counter[n] += miss * 0.2
+            counter[n] += miss * 0.15 * trend_factor
 
     return counter
 
@@ -54,15 +62,15 @@ def monte_carlo(counter, mode="stable"):
 
     simulation_counter = Counter()
 
-    # 🔥 200次模擬（安全值）
-    for _ in range(200):
+    # 🔥 300次模擬（仍安全）
+    for _ in range(300):
         draw = random.choices(numbers, weights=weights, k=5)
         for n in draw:
             simulation_counter[n] += 1
 
     best = [n for n, _ in simulation_counter.most_common(5)]
 
-    return sorted(best)
+    return sorted(best), simulation_counter
 
 @app.route("/generate")
 def generate():
@@ -71,9 +79,10 @@ def generate():
 
     counter = build_weights()
 
-    selected = monte_carlo(counter, mode)
+    selected, mc_counter = monte_carlo(counter, mode)
 
     total_weight = sum(counter.values())
+
     probabilities = {
         n: round((counter[n] / total_weight) * 100, 2)
         for n in range(1, 40)
@@ -86,12 +95,13 @@ def generate():
         "numbers": selected,
         "hot": hot,
         "cold": cold,
-        "probabilities": probabilities
+        "probabilities": probabilities,
+        "mc_frequency": dict(mc_counter)
     })
 
 @app.route("/")
 def home():
-    return "539 Cloud AI Monte Carlo Running"
+    return "539 Cloud AI Adaptive Running"
 
 if __name__ == "__main__":
     app.run()
