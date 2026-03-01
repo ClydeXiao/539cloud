@@ -1,53 +1,45 @@
 from flask import Flask, jsonify, request
-import requests
-from bs4 import BeautifulSoup
+import csv
 from collections import Counter
 import random
 
 app = Flask(__name__)
 
+HISTORY_FILE = "539_history.csv"
 history = []
 
-URL = "https://www.taiwanlottery.com/lotto/result/daily_cash"
 
-def fetch_latest():
+# ===============================
+# 讀取本地歷史資料
+# ===============================
+def load_history():
     global history
+    history.clear()
+
     try:
-        r = requests.get(URL, timeout=10)
-        soup = BeautifulSoup(r.text, "html.parser")
+        with open(HISTORY_FILE, newline="", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            next(reader)  # 跳過標題
 
-        rows = soup.select("table tbody tr")
+            for row in reader:
+                history.append({
+                    "period": row[0],
+                    "date": row[1],
+                    "numbers": list(map(int, row[2:7]))
+                })
 
-        history.clear()
-
-        for row in rows:
-            cols = row.find_all("td")
-            if len(cols) < 7:
-                continue
-
-            period = cols[0].text.strip()
-            date = cols[1].text.strip()
-
-            numbers = [
-                int(cols[2].text.strip()),
-                int(cols[3].text.strip()),
-                int(cols[4].text.strip()),
-                int(cols[5].text.strip()),
-                int(cols[6].text.strip())
-            ]
-
-            history.append({
-                "period": period,
-                "date": date,
-                "numbers": numbers
-            })
-
-        print("抓取成功:", len(history))
+        print("歷史資料載入完成:", len(history))
 
     except Exception as e:
-        print("抓取失敗:", e)
+        print("讀取歷史資料失敗:", e)
 
 
+load_history()
+
+
+# ===============================
+# 建立權重
+# ===============================
 def build_weights():
     counter = Counter()
     for row in history:
@@ -56,19 +48,18 @@ def build_weights():
     return counter
 
 
+# ===============================
+# AI 選號
+# ===============================
 @app.route("/generate")
 def generate():
 
     if not history:
-        fetch_latest()
-
-    if not history:
-        draw = sorted(random.sample(range(1, 40), 5))
         return jsonify({
-            "numbers": draw,
+            "numbers": [],
             "hot": [],
             "cold": [],
-            "mode": "fallback_random"
+            "error": "沒有歷史資料"
         })
 
     counter = build_weights()
@@ -83,29 +74,43 @@ def generate():
     return jsonify({
         "numbers": draw,
         "hot": hot,
-        "cold": cold,
-        "mode": "weighted"
+        "cold": cold
     })
 
 
+# ===============================
+# 歷史查詢
+# ===============================
 @app.route("/history")
 def history_query():
 
-    if not history:
-        fetch_latest()
-
     period = request.args.get("period")
+
+    if not period:
+        return jsonify({"error": "請提供期數"}), 400
 
     for row in history:
         if row["period"] == period:
             return jsonify(row)
 
-    return jsonify({"error": "period not found"}), 404
+    return jsonify({"error": "查無此期數"}), 404
+
+
+# ===============================
+# 手動重新載入資料
+# ===============================
+@app.route("/reload")
+def reload_data():
+    load_history()
+    return jsonify({
+        "status": "reloaded",
+        "records": len(history)
+    })
 
 
 @app.route("/")
 def home():
-    return "539來財 穩定抓官網版運行中"
+    return "539來財 商業穩定版運行中"
 
 
 if __name__ == "__main__":
